@@ -115,38 +115,6 @@
   .prog-dot{width:10px;height:10px;border-radius:50%;background:rgba(192,132,252,.3);transition:background .3s,transform .3s;}
   .prog-dot.active{background:#9333ea;transform:scale(1.3);}
   .prog-dot.done{background:#C084FC;}
-
-  /* ── Floating music notes on start screen ── */
-  .float-note{
-    position:fixed;
-    font-size:28px;
-    pointer-events:none;
-    z-index:5;
-    animation: floatUp 3.2s ease-in forwards;
-    opacity:0;
-  }
-  @keyframes floatUp{
-    0%  {transform:translateY(0) scale(0.5) rotate(-10deg); opacity:0;}
-    12% {opacity:1;}
-    80% {opacity:0.85;}
-    100%{transform:translateY(-55vh) scale(1.1) rotate(18deg); opacity:0;}
-  }
-
-  /* ── Tap-to-start hint ── */
-  .tap-hint{
-    margin-top:18px;
-    font-family:'Lilita One',sans-serif;
-    font-size:clamp(12px,3.5vw,15px);
-    color:#9333ea;
-    letter-spacing:0.5px;
-    animation: tapPulse 1.4s ease-in-out infinite;
-    opacity:0.85;
-  }
-  .tap-hint.hidden{ display:none; }
-  @keyframes tapPulse{
-    0%,100%{ transform:scale(1);   opacity:0.6; }
-    50%    { transform:scale(1.08);opacity:1;   }
-  }
 </style>
 </head>
 <body>
@@ -155,13 +123,9 @@
   <div class="mascot">🎹</div>
   <div class="start-title">Line &amp; Space Games</div>
   <div class="start-sub">Temukan tuts untuk not <span style="color:#9333ea">🟣 ungu</span>!</div>
-  <button class="start-btn" id="btnPlay" onclick="onClickPlay()">▶ Main!</button>
+  <button class="start-btn" onclick="initGame()">▶ Main!</button>
   <br>
-  <button class="start-btn" id="btnTeach"
-    style="background:linear-gradient(135deg,#C084FC,#818cf8);box-shadow:0 6px 0 #7c3aed,0 10px 30px rgba(192,132,252,.4);font-size:clamp(15px,5vw,21px);padding:14px 36px;margin-top:4px;"
-    onclick="onClickTeach()">📖 Ajari Aku Dulu</button>
-  <div class="tap-hint" id="tapHint">🎵 Sentuh layar untuk mulai musik!</div>
-  <div id="floatingNotes" style="position:relative;height:0;overflow:visible;width:100%;pointer-events:none;"></div>
+  <button class="start-btn" style="background:linear-gradient(135deg,#C084FC,#818cf8);box-shadow:0 6px 0 #7c3aed,0 10px 30px rgba(192,132,252,.4);font-size:clamp(15px,5vw,21px);padding:14px 36px;margin-top:4px;" onclick="showTeachScreen()">📖 Ajari Aku Dulu</button>
 </div>
 
 <div class="score-screen" id="scoreScreen">
@@ -259,459 +223,6 @@ function playWrong(){const o=audioCtx.createOscillator(),g=audioCtx.createGain()
 function playCountdownBeep(n){playTone(n===0?880:440,'square',.15,.2);if(n===0){playTone(1100,'square',.12,.12,.12);playTone(1320,'square',.15,.12,.22);}}
 function playStartFanfare(){[523,659,784,1047].forEach((f,i)=>playTone(f,'square',.12,.2,i*.12));}
 function playEndFanfare(good){if(good){[523,659,784,1047].forEach((f,i)=>playTone(f,'triangle',.2,.2,i*.12));}else{[440,392,349,330].forEach((f,i)=>playTone(f,'triangle',.2,.15,i*.14));}}
-
-// ================================================================
-// START SCREEN — INTRO MUSIC & BUTTON SFX
-// ================================================================
-// Strategy: music starts on FIRST touch anywhere on the page.
-// Buttons use onclick (not pointerdown) for navigation — so music
-// plays first, THEN the game starts after a short gap.
-// ================================================================
-
-let introMusicNodes = [];
-let introMusicRunning = false;
-let introMusicTimeout = null;
-let introReady = false;   // true once AudioContext is unlocked by first touch
-
-// ── Note builders ──────────────────────────────────────────────────
-// Square+triangle mix = punchy game-music feel
-function _introNote(freq, delay, vol, dur){
-  const t = audioCtx.currentTime + delay;
-  const o1=audioCtx.createOscillator(), g1=audioCtx.createGain();
-  o1.type='square'; o1.frequency.value=freq;
-  g1.gain.setValueAtTime(0,t);
-  g1.gain.linearRampToValueAtTime(vol*0.32, t+0.008);
-  g1.gain.exponentialRampToValueAtTime(vol*0.14, t+0.055);
-  g1.gain.exponentialRampToValueAtTime(0.0001, t+dur);
-  o1.connect(g1); g1.connect(audioCtx.destination);
-  o1.start(t); o1.stop(t+dur+0.04);
-  introMusicNodes.push(o1);
-  const o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
-  o2.type='triangle'; o2.frequency.value=freq;
-  g2.gain.setValueAtTime(0,t);
-  g2.gain.linearRampToValueAtTime(vol*0.55, t+0.010);
-  g2.gain.exponentialRampToValueAtTime(vol*0.22, t+0.07);
-  g2.gain.exponentialRampToValueAtTime(0.0001, t+dur);
-  o2.connect(g2); g2.connect(audioCtx.destination);
-  o2.start(t); o2.stop(t+dur+0.04);
-  introMusicNodes.push(o2);
-  const o3=audioCtx.createOscillator(), g3=audioCtx.createGain();
-  o3.type='sine'; o3.frequency.value=freq*2;
-  g3.gain.setValueAtTime(0,t);
-  g3.gain.linearRampToValueAtTime(vol*0.10, t+0.01);
-  g3.gain.exponentialRampToValueAtTime(0.0001, t+dur*0.30);
-  o3.connect(g3); g3.connect(audioCtx.destination);
-  o3.start(t); o3.stop(t+dur);
-  introMusicNodes.push(o3);
-}
-
-function _introBass(freq, delay, vol, dur){
-  const t = audioCtx.currentTime + delay;
-  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-  o.type='triangle'; o.frequency.value=freq;
-  g.gain.setValueAtTime(0,t);
-  g.gain.linearRampToValueAtTime(vol, t+0.015);
-  g.gain.exponentialRampToValueAtTime(vol*0.55, t+0.08);
-  g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
-  o.connect(g); g.connect(audioCtx.destination);
-  o.start(t); o.stop(t+dur+0.04);
-  introMusicNodes.push(o);
-}
-
-function _introSparkle(freq, delay){
-  const t = audioCtx.currentTime + delay;
-  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-  o.type='sine'; o.frequency.value=freq;
-  g.gain.setValueAtTime(0,t);
-  g.gain.linearRampToValueAtTime(0.10, t+0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001, t+0.42);
-  o.connect(g); g.connect(audioCtx.destination);
-  o.start(t); o.stop(t+0.48);
-  introMusicNodes.push(o);
-}
-
-// Kick drum
-function _introKick(delay){
-  const t = audioCtx.currentTime + delay;
-  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-  o.type='sine';
-  o.frequency.setValueAtTime(190, t);
-  o.frequency.exponentialRampToValueAtTime(38, t+0.13);
-  g.gain.setValueAtTime(0.30, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t+0.16);
-  o.connect(g); g.connect(audioCtx.destination);
-  o.start(t); o.stop(t+0.18);
-  introMusicNodes.push(o);
-}
-
-// Hi-hat (white noise highpass)
-function _introHat(delay, vol=0.055){
-  const t = audioCtx.currentTime + delay;
-  const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate*0.035), audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1);
-  const src=audioCtx.createBufferSource(), flt=audioCtx.createBiquadFilter(), g=audioCtx.createGain();
-  flt.type='highpass'; flt.frequency.value=7500;
-  src.buffer=buf;
-  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.035);
-  src.connect(flt); flt.connect(g); g.connect(audioCtx.destination);
-  src.start(t); src.stop(t+0.04);
-  introMusicNodes.push(src);
-}
-
-// Snare/clap
-function _introSnare(delay){
-  const t = audioCtx.currentTime + delay;
-  const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate*0.07), audioCtx.sampleRate);
-  const d = buf.getChannelData(0);
-  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1);
-  const src=audioCtx.createBufferSource(), flt=audioCtx.createBiquadFilter(), g=audioCtx.createGain();
-  flt.type='bandpass'; flt.frequency.value=1600; flt.Q.value=0.6;
-  src.buffer=buf;
-  g.gain.setValueAtTime(0.16,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.07);
-  src.connect(flt); flt.connect(g); g.connect(audioCtx.destination);
-  src.start(t); src.stop(t+0.09);
-  introMusicNodes.push(src);
-}
-
-// ── ♩ = 140 BPM · energetic kids game-show theme ─────────────────
-// C major · 16-beat loop · call-and-answer structure
-// High C → descend → bouncy pairs → soaring rise → big landing
-const B = 0.429; // one beat at 140 BPM
-
-const INTRO_MELODY = [
-  // === PHRASE A: Punchy opening fanfare — high to low ===
-  [1046.50, B*0,    0.26, B*0.48],   // C5  HIGH punch
-  [783.99,  B*0.5,  0.22, B*0.42],   // G4
-  [659.25,  B*1,    0.21, B*0.42],   // E4
-  [523.25,  B*1.5,  0.23, B*0.52],   // C4  land
-  // Bouncy repeat pairs
-  [659.25,  B*2,    0.20, B*0.38],   // E4
-  [783.99,  B*2.5,  0.21, B*0.38],   // G4
-  [659.25,  B*3,    0.20, B*0.38],   // E4
-  [880.00,  B*3.5,  0.23, B*0.44],   // A4  peak bounce
-  // === PHRASE B: Descend with swing ===
-  [880.00,  B*4,    0.22, B*0.46],   // A4
-  [783.99,  B*4.5,  0.20, B*0.38],   // G4
-  [659.25,  B*5,    0.20, B*0.38],   // E4
-  [587.33,  B*5.5,  0.18, B*0.38],   // D4
-  [523.25,  B*6,    0.24, B*1.30],   // C4  long hold — breath
-  // === PHRASE C: Charging ascent — excitement builds ===
-  [523.25,  B*8,    0.21, B*0.38],   // C4
-  [587.33,  B*8.5,  0.21, B*0.35],   // D4
-  [659.25,  B*9,    0.22, B*0.35],   // E4
-  [783.99,  B*9.5,  0.24, B*0.38],   // G4
-  [880.00,  B*10,   0.25, B*0.38],   // A4
-  [987.77,  B*10.5, 0.25, B*0.35],   // B4
-  [1046.50, B*11,   0.28, B*0.70],   // C5  PEAK! hold
-  // === PHRASE D: Triumphant finish ===
-  [1046.50, B*12,   0.24, B*0.38],   // C5
-  [880.00,  B*12.5, 0.22, B*0.35],   // A4
-  [783.99,  B*13,   0.22, B*0.35],   // G4
-  [659.25,  B*13.5, 0.21, B*0.35],   // E4
-  [659.25,  B*14,   0.20, B*0.30],   // E4  stutter tag
-  [587.33,  B*14.3, 0.18, B*0.28],   // D4
-  [523.25,  B*15,   0.26, B*1.10],   // C4  BIG LAND
-];
-
-// Bass: driving root+fifth, punchy
-const INTRO_BASS = [
-  [130.81, B*0,  0.18, B*0.32],
-  [196.00, B*1,  0.15, B*0.30],
-  [130.81, B*2,  0.17, B*0.32],
-  [196.00, B*3,  0.15, B*0.30],
-  [130.81, B*4,  0.18, B*0.32],
-  [174.61, B*5,  0.15, B*0.30],  // F2
-  [130.81, B*6,  0.18, B*0.60],
-  [130.81, B*8,  0.18, B*0.32],
-  [196.00, B*9,  0.15, B*0.30],
-  [130.81, B*10, 0.17, B*0.32],
-  [196.00, B*11, 0.16, B*0.32],
-  [130.81, B*12, 0.18, B*0.32],
-  [174.61, B*13, 0.15, B*0.30],
-  [196.00, B*14, 0.16, B*0.32],
-  [130.81, B*15, 0.20, B*0.80],
-];
-
-// Sparkles on big moments
-const INTRO_SPARKLES = [
-  [2093, B*0], [2637, B*6], [1568, B*8], [2093, B*11], [2637, B*15]
-];
-
-// Kick on every beat (1,2,3,4 × 4 bars)
-const INTRO_KICKS = Array.from({length:16}, (_,i) => B*i);
-// Snare on beats 2 and 4 of each bar (every other beat starting beat 1)
-const INTRO_SNARES = [B*1,B*3,B*5,B*7,B*9,B*11,B*13,B*15];
-// Hi-hats on every 8th note (every half beat)
-const INTRO_HATS = Array.from({length:32}, (_,i) => B*i*0.5);
-
-const INTRO_LOOP_DUR = B * 16 + 0.25;
-
-function _playIntroLoop(){
-  if(!introMusicRunning) return;
-  INTRO_MELODY.forEach(([f,d,v,dur])  => _introNote(f,d,v,dur));
-  INTRO_BASS.forEach(([f,d,v,dur])    => _introBass(f,d,v,dur));
-  INTRO_SPARKLES.forEach(([f,d])      => _introSparkle(f,d));
-  INTRO_KICKS.forEach(d               => _introKick(d));
-  INTRO_SNARES.forEach(d              => _introSnare(d));
-  INTRO_HATS.forEach(d                => _introHat(d));
-  introMusicTimeout = setTimeout(()=>{ if(introMusicRunning) _playIntroLoop(); }, INTRO_LOOP_DUR*1000);
-}
-
-function startIntroMusic(){
-  if(introMusicRunning) return;
-  introMusicRunning = true;
-  audioCtx.resume().then(()=>{
-    // Punchy "here we go!" 4-note fanfare (plays once before the loop)
-    _introNote(523.25, 0.00, 0.28, 0.18);
-    _introNote(659.25, 0.16, 0.26, 0.16);
-    _introNote(783.99, 0.30, 0.26, 0.16);
-    _introNote(1046.50,0.44, 0.32, 0.50);
-    _introKick(0.00); _introKick(0.16); _introKick(0.30);
-    _introSnare(0.22);
-    _introSparkle(2093, 0.44);
-    _introSparkle(2637, 0.58);
-    // Loop starts right after fanfare
-    introMusicTimeout = setTimeout(()=>{ if(introMusicRunning) _playIntroLoop(); }, 1050);
-  });
-}
-
-function stopIntroMusic(){
-  introMusicRunning = false;
-  if(introMusicTimeout){ clearTimeout(introMusicTimeout); introMusicTimeout=null; }
-  introMusicNodes.forEach(o=>{ try{ o.stop(audioCtx.currentTime+0.06); }catch(e){} });
-  introMusicNodes = [];
-}
-
-// ── Button SFX ─────────────────────────────────────────────────────
-function playBtnPlay(){
-  // "Let's go!" bright 3-note ascending burst
-  resumeAudio();
-  [523.25,659.25,1046.50].forEach((f,i)=>playTone(f,'triangle',0.14,0.22,i*0.08));
-}
-function playBtnTeach(){
-  // Soft 2-note "open book" chime
-  resumeAudio();
-  [659.25,880.00].forEach((f,i)=>playTone(f,'triangle',0.15,0.16,i*0.10));
-}
-// keep old name for compat
-function playBtnTap(isPlay){ if(isPlay) playBtnPlay(); else playBtnTeach(); }
-
-// ── Floating musical notes ─────────────────────────────────────────
-const NOTE_EMOJIS=['🎵','🎶','🎼','🎹','🎸','🎺','🎻','🥁','✨','🌟','⭐','💜'];
-let floatNoteInterval=null;
-
-function spawnFloatNote(){
-  const ss=document.getElementById('startScreen');
-  if(!ss||ss.classList.contains('hidden')) return;
-  const el=document.createElement('div');
-  el.className='float-note';
-  el.textContent=NOTE_EMOJIS[Math.floor(Math.random()*NOTE_EMOJIS.length)];
-  el.style.left=(8+Math.random()*84)+'vw';
-  el.style.bottom='8vh';
-  el.style.fontSize=(18+Math.random()*24)+'px';
-  el.style.animationDuration=(2.5+Math.random()*1.8)+'s';
-  el.style.animationDelay=(Math.random()*0.25)+'s';
-  document.body.appendChild(el);
-  setTimeout(()=>el.remove(),4500);
-}
-
-function startFloatingNotes(){
-  if(floatNoteInterval) return;
-  spawnFloatNote();
-  floatNoteInterval=setInterval(()=>{ if(Math.random()<0.5) spawnFloatNote(); },330);
-}
-
-function stopFloatingNotes(){
-  if(floatNoteInterval){ clearInterval(floatNoteInterval); floatNoteInterval=null; }
-  document.querySelectorAll('.float-note').forEach(n=>n.remove());
-}
-
-// ── Unlock audio + start music on very first interaction ───────────
-// capture:true fires BEFORE button onclick, so music is already running
-// when initGame()/showTeachScreen() call stopIntroMusic().
-function _unlockAndPlay(){
-  if(introReady) return;
-  introReady = true;
-  startIntroMusic();
-  startFloatingNotes();
-  // Hide the "tap to start" hint once music is running
-  const hint = document.getElementById('tapHint');
-  if(hint) hint.classList.add('hidden');
-}
-document.addEventListener('pointerdown', _unlockAndPlay, {capture:true, once:true});
-document.addEventListener('keydown',     _unlockAndPlay, {capture:true, once:true});
-
-// ── Start screen button handlers ───────────────────────────────────
-// Play SFX first (music already running via _unlockAndPlay),
-// then navigate after tiny delay so btn sound is audible.
-function onClickPlay(){
-  _unlockAndPlay(); // ensure started if somehow missed
-  playBtnPlay();
-  setTimeout(initGame, 120);
-}
-function onClickTeach(){
-  _unlockAndPlay();
-  playBtnTeach();
-  setTimeout(showTeachScreen, 120);
-}
-
-// ── SCORE SCREEN SOUNDS ──────────────────────────────────────────
-// score=100: mega fanfare + confetti burst bells
-// score>=85:  grand triumphant fanfare  
-// score>=70:  happy ascending melody
-// score>=60:  warm cheerful chime
-// score>=50:  gentle encouraging tune
-// score<50:   upbeat "try again!" motivational jingle (NOT sad)
-
-function playScoreSound(score){
-  resumeAudio();
-  if(score===100)       _playPerfect();
-  else if(score>=85)    _playGrand();
-  else if(score>=70)    _playHappy();
-  else if(score>=60)    _playWarm();
-  else if(score>=50)    _playEncourage();
-  else                  _playTryAgain();
-}
-
-// Helper: richer note with harmonics
-function _richNote(freq, delay, vol, dur, type='triangle'){
-  const t = audioCtx.currentTime + delay;
-  // fundamental
-  const o1=audioCtx.createOscillator(), g1=audioCtx.createGain();
-  o1.type=type; o1.frequency.value=freq;
-  g1.gain.setValueAtTime(0,t); g1.gain.linearRampToValueAtTime(vol,t+0.015);
-  g1.gain.exponentialRampToValueAtTime(vol*0.5,t+0.06); g1.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  o1.connect(g1); g1.connect(audioCtx.destination); o1.start(t); o1.stop(t+dur+0.05);
-  // octave harmonic
-  const o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
-  o2.type='sine'; o2.frequency.value=freq*2;
-  g2.gain.setValueAtTime(0,t); g2.gain.linearRampToValueAtTime(vol*0.2,t+0.01);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+dur*0.5);
-  o2.connect(g2); g2.connect(audioCtx.destination); o2.start(t); o2.stop(t+dur);
-}
-
-// Helper: sparkle shimmer (high bell tones)
-function _sparkle(delay){
-  [1319,1568,2093,2637].forEach((f,i)=>{
-    const t=audioCtx.currentTime+delay+i*0.065;
-    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    o.type='sine'; o.frequency.value=f;
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.10,t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
-    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.55);
-  });
-}
-
-// Helper: drum-like kick for emphasis
-function _kick(delay){
-  const t=audioCtx.currentTime+delay;
-  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-  o.type='sine'; o.frequency.setValueAtTime(180,t); o.frequency.exponentialRampToValueAtTime(40,t+0.15);
-  g.gain.setValueAtTime(0.3,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.2);
-  o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.22);
-}
-
-// SCORE 100 — PERFECT! Mega fanfare: full chord + sparkle cascade + bell shimmer
-function _playPerfect(){
-  // Big opening chord C major
-  [261.63,329.63,392.00,523.25].forEach((f,i)=>{_richNote(f,0,0.22,1.2,'triangle');});
-  // Ascending heroic run
-  [523.25,587.33,659.25,698.46,783.99,880.00,987.77,1046.50]
-    .forEach((f,i)=>_richNote(f, 0.18+i*0.09, 0.20, 0.55));
-  // Sparkle bursts
-  _sparkle(0.2); _sparkle(0.55); _sparkle(0.95); _sparkle(1.35);
-  // Final triumphant chord with kick
-  _kick(1.1);
-  [523.25,659.25,783.99,1046.50].forEach((f,i)=>{_richNote(f,1.1,0.26,1.4,'triangle');});
-  // Extra shimmer tail
-  [2093,2637,3136].forEach((f,i)=>{
-    const t=audioCtx.currentTime+1.5+i*0.08;
-    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    o.type='sine'; o.frequency.value=f;
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.08,t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.7);
-    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.75);
-  });
-}
-
-// SCORE >=85 — GRAND! Triumphant fanfare, rich chord progression
-function _playGrand(){
-  // Fanfare motif: short-short-long
-  _richNote(392.00, 0.00, 0.22, 0.15);
-  _richNote(392.00, 0.18, 0.22, 0.15);
-  _richNote(523.25, 0.38, 0.26, 0.55);
-  _richNote(659.25, 0.96, 0.24, 0.55);
-  _richNote(783.99, 1.20, 0.28, 0.90);
-  _sparkle(0.38); _sparkle(1.1);
-  _kick(1.18);
-  // Harmony notes
-  _richNote(261.63, 1.18, 0.18, 0.9);
-  _richNote(329.63, 1.18, 0.16, 0.9);
-}
-
-// SCORE >=70 — HAPPY! Joyful ascending melody 
-function _playHappy(){
-  // Bouncy happy run: C D E G E G C5
-  const notes=[261.63,293.66,329.63,392.00,329.63,392.00,523.25];
-  notes.forEach((f,i)=>_richNote(f, i*0.13, 0.20, 0.38));
-  _sparkle(0.55);
-  // Finishing note held longer
-  _richNote(523.25, notes.length*0.13, 0.24, 0.8);
-  _kick(notes.length*0.13);
-}
-
-// SCORE >=60 — WARM! Gentle cheerful chime sequence
-function _playWarm(){
-  // Warm ascending C E G C5 with held final
-  [261.63, 329.63, 392.00, 523.25].forEach((f,i)=>{
-    _richNote(f, i*0.18, 0.20, 0.55);
-  });
-  _sparkle(0.6);
-  _richNote(523.25, 0.76, 0.22, 0.9);
-}
-
-// SCORE >=50 — ENCOURAGE! Gentle positive tune, upbeat but soft
-function _playEncourage(){
-  // Simple stepwise C D E, then up to G — "you're getting there!"
-  [261.63, 293.66, 329.63, 392.00].forEach((f,i)=>{
-    _richNote(f, i*0.17, 0.18, 0.45);
-  });
-  // Small twinkle
-  [784, 1047].forEach((f,i)=>{
-    const t=audioCtx.currentTime+0.7+i*0.12;
-    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    o.type='sine'; o.frequency.value=f;
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.10,t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.4);
-    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.45);
-  });
-}
-
-// SCORE <50 — TRY AGAIN! Fun bouncy motivational — NOT sad. Sounds like "Let's go!"
-function _playTryAgain(){
-  // Playful bouncy motif — fast repeated high notes + upward jump = "come on!"
-  const pattern = [
-    [392.00, 0.00, 0.14],
-    [392.00, 0.13, 0.14],
-    [392.00, 0.26, 0.14],
-    [523.25, 0.42, 0.38], // jump up!
-  ];
-  pattern.forEach(([f,d,dur])=>_richNote(f,d,0.18,dur,'square'));
-  // Then a cute little descend and re-bounce
-  [523.25,440.00,392.00,440.00,523.25].forEach((f,i)=>{
-    _richNote(f, 0.85+i*0.11, 0.16, 0.22, 'triangle');
-  });
-  // Tiny shimmer at end to keep energy up
-  [784, 1047].forEach((f,i)=>{
-    const t=audioCtx.currentTime+1.45+i*0.1;
-    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    o.type='sine'; o.frequency.value=f;
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.09,t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.4);
-    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.45);
-  });
-}
 function playUrgentTick(){playTone(800,'square',.08,.08);}
 
 // ================================================================
@@ -742,7 +253,7 @@ function drawClefLabel(){
   ctx.font='bold 12px Lilita One,Arial';
   ctx.fillStyle=currentClef==='bass'?'#9333ea':'#FF8C42';
   ctx.textAlign='left';ctx.globalAlpha=0.72;
-  ctx.fillText(currentClef==='bass'?'Bass Clef':'Treble Clef', STAFF_LEFT_X, STAFF_TOP_Y-10);
+  ctx.fillText(currentClef==='bass'?'Kunci F':'Kunci G', STAFF_LEFT_X, STAFF_TOP_Y-10);
   ctx.restore();
 }
 
@@ -752,7 +263,7 @@ function tcDrawClefLabel(ctx2){
   ctx2.font='bold 11px Lilita One,Arial';
   ctx2.fillStyle=teachClef==='bass'?'#9333ea':'#FF8C42';
   ctx2.textAlign='left';ctx2.globalAlpha=0.72;
-  ctx2.fillText(teachClef==='bass'?'Bass Clef':'Treble Clef', TC_STAFF_LEFT, TC_STAFF_TOP-6);
+  ctx2.fillText(teachClef==='bass'?'Kunci F':'Kunci G', TC_STAFF_LEFT, TC_STAFF_TOP-6);
   ctx2.restore();
 }
 
@@ -975,38 +486,14 @@ function endGame(){
   else if(finalScore>=60){trophy='🥈';comment='Bagus! Tinggal sedikit lagi lebih cepat!';}
   else if(finalScore>=50){trophy='🥉';comment='Lumayan! Ayo coba lebih cepat lagi!';}
   else{trophy='🌈';comment='Ayo coba lagi! Kamu pasti bisa!';}
-  playScoreSound(finalScore);
+  playEndFanfare(finalScore>=60);
   document.getElementById('trophy').textContent=trophy;
   document.getElementById('comment').textContent=comment;
-  document.getElementById('finalScore').textContent='0';
-
-  // Delay show, then animate score counting up
-  setTimeout(()=>{
-    document.getElementById('scoreScreen').classList.add('show');
-    // Animate score counting up after screen appears
-    setTimeout(()=>{
-      let cur=0;
-      const target=finalScore;
-      const steps=Math.max(target,1);
-      const dur=Math.min(1600, target*22); // faster for lower scores
-      const interval=dur/steps;
-      const counter=setInterval(()=>{
-        cur=Math.min(cur+1,target);
-        document.getElementById('finalScore').textContent=cur;
-        if(cur>=target){
-          clearInterval(counter);
-          // Extra sparkle sound at the exact moment the number locks in
-          if(target>=85) _sparkle(0);
-          if(target===100){ setTimeout(()=>{_sparkle(0);_kick(0);},300); }
-        }
-      },interval);
-    },350);
-  },400);
+  document.getElementById('finalScore').textContent=finalScore;
+  setTimeout(()=>document.getElementById('scoreScreen').classList.add('show'),400);
 }
 
 function initGame(){
-  stopIntroMusic();
-  stopFloatingNotes();
   resumeAudio();correct=0;wrong=0;total=0;clearInterval(timerInterval);
   if(teachAnimRAF){cancelAnimationFrame(teachAnimRAF);teachAnimRAF=null;}
   document.getElementById('startScreen').classList.add('hidden');
@@ -1026,94 +513,6 @@ function initGame(){
   setTimeout(doStep,300);
 }
 startStaffAnimation();
-
-// ================================================================
-// TEACH SCREEN SOUND EFFECTS
-// ================================================================
-
-// Piano note frequencies for C4–B4 (matching noteIdx 0–6)
-const PIANO_FREQS = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88]; // C D E F G A B
-const NOTE_NAMES_ID = ['Do','Re','Mi','Fa','Sol','La','Si'];
-
-// Warm piano-like tone using multiple oscillators + envelope
-function playTeachNote(noteIdx, delay=0, vol=0.28, dur=0.9){
-  resumeAudio();
-  const freq = PIANO_FREQS[noteIdx] || 440;
-  const t = audioCtx.currentTime + delay;
-  // Fundamental
-  const o1=audioCtx.createOscillator(), g1=audioCtx.createGain();
-  o1.type='triangle'; o1.frequency.value=freq;
-  g1.gain.setValueAtTime(0,t); g1.gain.linearRampToValueAtTime(vol,t+0.01);
-  g1.gain.exponentialRampToValueAtTime(vol*0.55,t+0.06);
-  g1.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  o1.connect(g1); g1.connect(audioCtx.destination); o1.start(t); o1.stop(t+dur+0.05);
-  // 2nd harmonic (octave above, softer)
-  const o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
-  o2.type='sine'; o2.frequency.value=freq*2;
-  g2.gain.setValueAtTime(0,t); g2.gain.linearRampToValueAtTime(vol*0.18,t+0.01);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+dur*0.5);
-  o2.connect(g2); g2.connect(audioCtx.destination); o2.start(t); o2.stop(t+dur);
-  // 3rd harmonic (softer character)
-  const o3=audioCtx.createOscillator(), g3=audioCtx.createGain();
-  o3.type='sine'; o3.frequency.value=freq*3;
-  g3.gain.setValueAtTime(0,t); g3.gain.linearRampToValueAtTime(vol*0.06,t+0.01);
-  g3.gain.exponentialRampToValueAtTime(0.001,t+dur*0.3);
-  o3.connect(g3); g3.connect(audioCtx.destination); o3.start(t); o3.stop(t+dur);
-}
-
-// Ascending sparkle: plays both notes so kids hear the interval
-function playTeachSlide(fromIdx, toIdx, steps){
-  resumeAudio();
-  if(steps===1){
-    playTeachNote(fromIdx, 0, 0.28, 0.8);
-    playTeachNote(toIdx, 0.55, 0.34, 1.0);
-  } else {
-    const midIdx = fromIdx + (toIdx>fromIdx ? 1 : -1);
-    playTeachNote(fromIdx, 0, 0.25, 0.7);
-    playTeachNote(midIdx, 0.5, 0.22, 0.6);
-    playTeachNote(toIdx, 1.0, 0.34, 1.0);
-  }
-}
-
-// Magic arrival sparkle when note lands on target
-function playTeachArrival(){
-  resumeAudio();
-  // Twinkle ascending sparkle
-  [0.0, 0.08, 0.16].forEach((d,i)=>{
-    const freq = [1047, 1319, 1568][i];
-    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-    const t=audioCtx.currentTime+d;
-    o.type='sine'; o.frequency.value=freq;
-    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.14,t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.35);
-    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+0.4);
-  });
-}
-
-// Cheerful nav button sound
-function playTeachNav(dir){
-  resumeAudio();
-  const freqs = dir==='next' ? [523,659] : [659,523];
-  freqs.forEach((f,i)=>playTone(f,'triangle',0.12,0.16,i*0.09));
-}
-
-// Welcome jingle when entering teach screen
-function playTeachWelcome(){
-  resumeAudio();
-  // Simple happy arpeggio: C E G C5
-  [261.63, 329.63, 392.00, 523.25].forEach((f,i)=>playTone(f,'triangle',0.2,0.18,i*0.13));
-}
-
-// Gentle "blink start" cue — soft chime when animation first shows
-function playTeachBlink(noteIdx){
-  resumeAudio();
-  playTeachNote(noteIdx, 0, 0.22, 0.7);
-}
-
-// Track whether we already played the arrival sound for current anim
-let _teachArrivalPlayed = false;
-let _teachSlidePlayed = false;
-let _teachBlinkPlayed = false;
 
 // ================================================================
 // TEACH SCREEN ENGINE
@@ -1270,10 +669,6 @@ function runTeachAnim(animIdx){
   // Pick clef randomly for this animation
   teachClef = Math.random() < 0.5 ? 'bass' : 'treble';
 
-  _teachArrivalPlayed = false;
-  _teachSlidePlayed = false;
-  _teachBlinkPlayed = false;
-
   const anim = TEACH_ANIMS[animIdx];
   const {fromIdx, toIdx, steps} = anim;
   const fromKey = noteIdxToPianoKey(fromIdx);
@@ -1349,22 +744,11 @@ function runTeachAnim(animIdx){
       // Show hint text after first blink
       if(elapsed > 350) showHintText(true);
 
-      // Play from-note sound at start of blink phase
-      if(!_teachBlinkPlayed && elapsed > 50){
-        _teachBlinkPlayed = true;
-        playTeachBlink(fromIdx);
-      }
-
       if(elapsed >= BLINK_DURATION){
         phase=1; phaseStartTime=ts;
         tcHighlightKey(fromKey,'orange');
         showHintText(false);
         slideFrom=fromIdx; slideTo=steps===1?toIdx:midIdx; onSecondSlide=false;
-        // Play slide sound as movement begins
-        if(!_teachSlidePlayed){
-          _teachSlidePlayed = true;
-          playTeachSlide(fromIdx, toIdx, steps);
-        }
       }
 
     } else if(phase===1){
@@ -1438,12 +822,11 @@ function runTeachAnim(animIdx){
           phase=3; phaseStartTime=ts; jumpFlash=1;
           tcClearKeys(); tcHighlightKey(toKey,'purple');
         } else if(!onSecondSlide){
-          // Start second slide from mid — play mid note
+          // Start second slide from mid
           onSecondSlide=true;
           slideFrom=midIdx; slideTo=toIdx;
           phaseStartTime=ts;
           tcHighlightKey(midKey,'orange');
-          playTeachNote(midIdx, 0, 0.22, 0.6); // mid-step note sound
         } else {
           // Both steps done → jump phase
           phase=2; phaseStartTime=ts;
@@ -1560,13 +943,6 @@ function runTeachAnim(animIdx){
     } else if(phase===3){
       // ── ARRIVAL FLASH ──
       jumpFlash = Math.max(0, 1-(elapsed/420));
-      // Play arrival sparkle once
-      if(!_teachArrivalPlayed){
-        _teachArrivalPlayed = true;
-        playTeachArrival();
-        // Also play destination note
-        playTeachNote(toIdx, 0.05, 0.35, 1.1);
-      }
       if(document.getElementById('teachStaffCanvas')){
         const canvas2=document.getElementById('teachStaffCanvas');
         const ctx2=canvas2.getContext('2d');
@@ -1623,7 +999,6 @@ function updateTeachUI(){
 
 function teachNext(){
   if(teachIdx<TEACH_ANIMS.length-1){
-    playTeachNav('next');
     teachIdx++;
     document.getElementById('playNowBtn').classList.add('hidden-btn');
     showHintText(false);
@@ -1635,7 +1010,6 @@ function teachNext(){
 
 function teachPrev(){
   if(teachIdx>0){
-    playTeachNav('prev');
     teachIdx--;
     document.getElementById('playNowBtn').classList.add('hidden-btn');
     showHintText(false);
@@ -1651,15 +1025,11 @@ function goHome(){
   document.getElementById('scoreScreen').classList.remove('show');
   document.getElementById('teachScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
-  setTimeout(()=>{ startIntroMusic(); startFloatingNotes(); }, 400);
 }
 
 function showTeachScreen(){
   if(teachAnimRAF){cancelAnimationFrame(teachAnimRAF);teachAnimRAF=null;}
   teachIdx=0;
-  stopIntroMusic();
-  stopFloatingNotes();
-  playTeachWelcome();
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('scoreScreen').classList.remove('show');
   document.getElementById('teachScreen').classList.remove('hidden');
@@ -1677,7 +1047,6 @@ function backToStart(){
   showHintText(false);
   document.getElementById('teachScreen').classList.add('hidden');
   document.getElementById('startScreen').classList.remove('hidden');
-  setTimeout(()=>{ startIntroMusic(); startFloatingNotes(); }, 400);
 }
 </script>
 </body>
