@@ -126,6 +126,11 @@
   <button class="start-btn" onclick="initGame()">▶ Main!</button>
   <br>
   <button class="start-btn" style="background:linear-gradient(135deg,#C084FC,#818cf8);box-shadow:0 6px 0 #7c3aed,0 10px 30px rgba(192,132,252,.4);font-size:clamp(15px,5vw,21px);padding:14px 36px;margin-top:4px;" onclick="showTeachScreen()">📖 Ajari Aku Dulu</button>
+  <div style="margin-top:24px;display:flex;align-items:center;gap:6px;opacity:.55;">
+    <div style="height:1px;width:28px;background:linear-gradient(90deg,transparent,#9333ea);"></div>
+    <span style="font-family:'Lilita One',sans-serif;font-size:11px;letter-spacing:2px;color:#9333ea;text-transform:lowercase;">ariyadigital</span>
+    <div style="height:1px;width:28px;background:linear-gradient(90deg,#9333ea,transparent);"></div>
+  </div>
 </div>
 
 <div class="score-screen" id="scoreScreen">
@@ -138,6 +143,11 @@
   <button class="start-btn" style="background:linear-gradient(135deg,#C084FC,#818cf8);box-shadow:0 6px 0 #7c3aed,0 10px 30px rgba(192,132,252,.4);font-size:clamp(15px,5vw,21px);padding:14px 36px;margin-top:8px;" onclick="showTeachScreen()">📖 Ajari Lagi</button>
   <br>
   <button class="start-btn" style="background:linear-gradient(135deg,#56CFB2,#4ECDC4);box-shadow:0 6px 0 #2a9d8f,0 10px 30px rgba(86,207,178,.4);font-size:clamp(14px,4.5vw,19px);padding:12px 32px;margin-top:8px;" onclick="goHome()">🏠 Selesai Main</button>
+  <div style="margin-top:22px;display:flex;align-items:center;gap:6px;opacity:.55;">
+    <div style="height:1px;width:28px;background:linear-gradient(90deg,transparent,#9333ea);"></div>
+    <span style="font-family:'Lilita One',sans-serif;font-size:11px;letter-spacing:2px;color:#9333ea;text-transform:lowercase;">ariyadigital</span>
+    <div style="height:1px;width:28px;background:linear-gradient(90deg,#9333ea,transparent);"></div>
+  </div>
 </div>
 
 <!-- TEACH SCREEN -->
@@ -148,7 +158,7 @@
   </div>
   <div class="teach-body">
     <div class="prog-dots" id="progDots"></div>
-    <div class="anim-counter" id="animCounter">Animasi 1 dari 8</div>
+    <div class="anim-counter" id="animCounter">Lesson 1 dari 8</div>
     <div class="anim-title-label" id="animTitle">Naik 1: Line → Space</div>
     <div class="teach-staff-card">
       <canvas id="teachStaffCanvas" width="380" height="240"></canvas>
@@ -224,6 +234,14 @@ function playCountdownBeep(n){playTone(n===0?880:440,'square',.15,.2);if(n===0){
 function playStartFanfare(){[523,659,784,1047].forEach((f,i)=>playTone(f,'square',.12,.2,i*.12));}
 function playEndFanfare(good){if(good){[523,659,784,1047].forEach((f,i)=>playTone(f,'triangle',.2,.2,i*.12));}else{[440,392,349,330].forEach((f,i)=>playTone(f,'triangle',.2,.15,i*.14));}}
 function playUrgentTick(){playTone(800,'square',.08,.08);}
+
+// Note frequencies for C D E F G A B (mid-octave, pleasant for children)
+const NOTE_FREQS = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88]; // C4 D4 E4 F4 G4 A4 B4
+function playNoteIdx(idx, delay=0){
+  if(idx<0||idx>=NOTE_FREQS.length) return;
+  resumeAudio();
+  playTone(NOTE_FREQS[idx], 'sine', 0.55, 0.20, delay);
+}
 
 // ================================================================
 // STAFF / CANVAS
@@ -447,6 +465,8 @@ function newRound(){
 
   whiteKeys[startIdx].classList.add('active');
   drawStaff();canClick=true;
+  // Play the first note so the player can hear the pitch hint
+  setTimeout(()=>playNoteIdx(startIdx), 120);
 }
 
 function handleClick(i){
@@ -679,6 +699,8 @@ function runTeachAnim(animIdx){
   // piano: highlight from key orange immediately
   tcClearKeys();
   tcHighlightKey(fromKey, 'orange');
+  resumeAudio();
+  playNoteIdx(fromIdx); // play from-note as animation starts
 
   const BLINK_DURATION  = 2600; // ms blink phase (note + key blink together)
   const SLIDE_DURATION  = 1600;  // ms per slide — slower for clarity
@@ -748,6 +770,7 @@ function runTeachAnim(animIdx){
         phase=1; phaseStartTime=ts;
         tcHighlightKey(fromKey,'orange');
         showHintText(false);
+        playNoteIdx(fromIdx); // replay from-note as movement begins
         slideFrom=fromIdx; slideTo=steps===1?toIdx:midIdx; onSecondSlide=false;
       }
 
@@ -821,16 +844,19 @@ function runTeachAnim(animIdx){
         if(steps===1){
           phase=3; phaseStartTime=ts; jumpFlash=1;
           tcClearKeys(); tcHighlightKey(toKey,'purple');
+          playNoteIdx(toIdx); // arrival note
         } else if(!onSecondSlide){
           // Start second slide from mid
           onSecondSlide=true;
           slideFrom=midIdx; slideTo=toIdx;
           phaseStartTime=ts;
           tcHighlightKey(midKey,'orange');
+          playNoteIdx(midIdx); // mid-step note
         } else {
           // Both steps done → jump phase
           phase=2; phaseStartTime=ts;
           tcClearKeys(); tcHighlightKey(toKey,'purple');
+          playNoteIdx(toIdx); // arrived at final after step-by-step
         }
       }
 
@@ -840,6 +866,9 @@ function runTeachAnim(animIdx){
       const staffCenter = canvas2?(TC_STAFF_LEFT+TC_STAFF_RIGHT)/2:190;
       const xFrom = staffCenter-60, xTo = staffCenter+60;
       const yFrom = tcNoteToY(fromIdx), yTo = tcNoteToY(toIdx);
+
+      // Play from-note once when jump phase just begins
+      if(elapsed < 50){ playNoteIdx(fromIdx); }
 
       if(elapsed < PAUSE_PRE_JUMP){
         // Pause: show arrived-at-mid state + ghost of fromIdx to indicate jump start
@@ -937,6 +966,7 @@ function runTeachAnim(animIdx){
         if(jumpT>=1){
           phase=3; phaseStartTime=ts; jumpFlash=1;
           tcClearKeys(); tcHighlightKey(toKey,'purple');
+          playNoteIdx(toIdx); // jump landing note
         }
       }
 
@@ -981,7 +1011,7 @@ function runTeachAnim(animIdx){
 
 function updateTeachUI(){
   const anim = TEACH_ANIMS[teachIdx];
-  document.getElementById('animCounter').textContent=`Animasi ${teachIdx+1} dari ${TEACH_ANIMS.length}`;
+  document.getElementById('animCounter').textContent=`Lesson ${teachIdx+1} dari ${TEACH_ANIMS.length}`;
   document.getElementById('animTitle').textContent=anim.title;
   document.getElementById('teachPrev').disabled = teachIdx===0;
   document.getElementById('teachNext').disabled = teachIdx===TEACH_ANIMS.length-1;
